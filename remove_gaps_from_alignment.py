@@ -68,7 +68,6 @@ def foo(rdb_alignment_file, species_file, output_file):
     alignment_wo_extra_characters = cleanup_alignment(alignment)
     species = [line.strip() for line in species_file]
     alignment_wo_gaps = remove_gaps_from_alignment(alignment_wo_extra_characters, species)
-    print(alignment_wo_gaps)
     AlignIO.write(alignment_wo_gaps, output_file, format='fasta')
 
 if __name__ == '__main__':
