@@ -3,7 +3,10 @@
 import click
 from Bio import SeqIO
 
-@click.command()
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+
+
+@click.command(context_settings=CONTEXT_SETTINGS)
 @click.option('--species-file', '-sp', type=click.File('r'))
 @click.option('--sequences-file', '-seqs', type=click.File('r'))
 @click.option('--output-file', '-o', type=click.File('w'))
