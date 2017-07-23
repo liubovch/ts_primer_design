@@ -56,10 +56,13 @@ def remove_gaps_from_alignment(alignment, species):
     return alignment
 
 
-@click.command()
-@click.option('--rdb-alignment-file', type=click.File('r'))
-@click.option('--species-file', type=click.File('r'))
-@click.option('--output-file', type=click.File('w'))
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+
+
+@click.command(context_settings=CONTEXT_SETTINGS)
+@click.option('--rdb-alignment-file', '-a', type=click.File('r'))
+@click.option('--species-file', '-sp', type=click.File('r'))
+@click.option('--output-file', '-o', type=click.File('w'))
 def foo(rdb_alignment_file, species_file, output_file):
     alignment = AlignIO.read(rdb_alignment_file, format='fasta')
     alignment_wo_extra_characters = cleanup_alignment(alignment)
