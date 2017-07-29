@@ -61,16 +61,16 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 
 @click.command(context_settings=CONTEXT_SETTINGS)
-@click.option('--rdb-alignment-file', '-a', type=click.File('r'), help='Alignment in FASTA format')
-@click.option('--species-file', '-sp', type=click.File('r'),
+@click.option('--rdb-alignment', '-a', type=click.File('r'), help='Alignment in FASTA format')
+@click.option('--species', '-sp', type=click.File('r'),
               help='File with taxon representatives each on its own line')
-@click.option('--output-file', '-o', type=click.File('w'))
-def foo(rdb_alignment_file, species_file, output_file):
-    alignment = AlignIO.read(rdb_alignment_file, format='fasta')
+@click.option('--output', '-o', type=click.File('w'))
+def foo(rdb_alignment, species, output):
+    alignment = AlignIO.read(rdb_alignment, format='fasta')
     alignment_wo_extra_characters = cleanup_alignment(alignment)
-    species = [line.strip() for line in species_file]
+    species = [line.strip() for line in species]
     alignment_wo_gaps = remove_gaps_from_alignment(alignment_wo_extra_characters, species)
-    AlignIO.write(alignment_wo_gaps, output_file, format='fasta')
+    AlignIO.write(alignment_wo_gaps, output, format='fasta')
 
 if __name__ == '__main__':
     foo()

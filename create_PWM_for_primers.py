@@ -2,16 +2,12 @@
 
 import click
 from Bio import AlignIO
-from Bio.Alphabet import IUPAC
-from Bio.Alphabet import Gapped
 from Bio.Align import MultipleSeqAlignment
 from Bio import SeqIO
 from Bio import motifs
 from Bio.motifs.matrix import FrequencyPositionMatrix
 
-
-ALPHABET = Gapped(IUPAC.ambiguous_dna, gap_char='-')
-UNAMBIGUOUS_ALPHABET = Gapped(IUPAC.unambiguous_dna, gap_char='-')
+from remove_gaps_from_alignment import ALPHABET, UNAMBIGUOUS_ALPHABET
 
 
 def remove_species_from_alignment(alignment_to_modify, species):
@@ -43,18 +39,23 @@ def search_positions_w_gaps(primer, sequence):
     return [i_start, (i_end + 1)]
 
 
-def create_pwm(alignment, start, end):
+def create_pwm(alignment, start, end, direction):
     motif = motifs.create([s.seq for s in alignment[:, start:end]], ALPHABET)
+    if direction in ['R', 'Z_R']:
+        motif = motif.reverse_complement()
+    normalized_counts = get_normalized_counts(motif)
 
+    return motif.consensus, normalized_counts
+
+
+def get_normalized_counts(motif):
     motif_counts = {}
     for n, counts in motif.counts.items():
         if n in UNAMBIGUOUS_ALPHABET.letters:
             motif_counts[n] = counts
     motif_counts = FrequencyPositionMatrix(UNAMBIGUOUS_ALPHABET, motif_counts)
-
     normalized_counts = motif_counts.normalize()
-
-    return motif.consensus, normalized_counts
+    return normalized_counts
 
 
 class Report:
@@ -88,15 +89,20 @@ class Report:
         return '\n'.join(self._lines)
 
 
-@click.command()
-@click.option('--taxon-name', type=str, required=True)
-@click.option('--whole-alignment-file', type=click.File('r'))
-@click.option('--species-file', type=click.File('r'))
-@click.option('--primers-file', type=click.File('r'))
-@click.option('--output-file', type=click.File('w'))
-def foo(taxon_name, whole_alignment_file, species_file, primers_file, output_file):
-    whole_alignment = AlignIO.read(whole_alignment_file, format='fasta', alphabet=ALPHABET)
-    species = [line.strip() for line in species_file]
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+
+
+@click.command(context_settings=CONTEXT_SETTINGS)
+@click.option('--taxon-name', '-t', type=str, required=True)
+@click.option('--alignment', '-a', type=click.File('r'), help='Alignment in FASTA format')
+@click.option('--species', '-sp', type=click.File('r'), help='File with taxon representatives each on its own line')
+@click.option('--primers', '-p', type=click.File('r'),
+              help='List of primers (F — forward, R — reverse, Z_F — forward probe, Z_R — reverse probe)'
+                   ' in FASTA format')
+@click.option('--output', '-o', type=click.File('w'))
+def foo(taxon_name, alignment, species, primers, output):
+    whole_alignment = AlignIO.read(alignment, format='fasta', alphabet=ALPHABET)
+    species = [line.strip() for line in species]
 
     alignment_wo_taxon = remove_species_from_alignment(whole_alignment, species)
     taxon_alignment = do_alignment_for_taxon(whole_alignment, species)
@@ -105,19 +111,17 @@ def foo(taxon_name, whole_alignment_file, species_file, primers_file, output_fil
 
     report = Report()
     report.add_comment(taxon_name, len(taxon_alignment), len(alignment_wo_taxon))
-    for rec in SeqIO.parse(primers_file, 'fasta', alphabet=ALPHABET):
+    for rec in SeqIO.parse(primers, 'fasta', alphabet=ALPHABET):
         pos_start, pos_end = search_positions_w_gaps(rec, seq)
 
-        taxon_consensus, taxon_pwm  = create_pwm(taxon_alignment, pos_start, pos_end)
-        wo_taxon_consensus, wo_taxon_pwm  = create_pwm(alignment_wo_taxon, pos_start, pos_end)
+        taxon_consensus, taxon_pwm = create_pwm(taxon_alignment, pos_start, pos_end, rec.id)
+        wo_taxon_consensus, wo_taxon_pwm = create_pwm(alignment_wo_taxon, pos_start, pos_end, rec.id)
 
         report.add_primer(rec)
         report.add_consensus(taxon_name, taxon_consensus, taxon_pwm)
         report.add_consensus('w/o ' + taxon_name, wo_taxon_consensus, wo_taxon_pwm)
 
-    output_file.write(str(report))
-
-
+    output.write(str(report))
 
 if __name__ == '__main__':
     foo()
