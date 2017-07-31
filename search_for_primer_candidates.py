@@ -64,7 +64,7 @@ def get_degenerate_consensus(counts):
     return sequence
 
 
-def split_degenerate_to_variants(consensus):
+def expand_degenerate_to_variants(consensus):
     options = [DEGENERATE_NUCL_MAP_INV[x] for x in consensus]
     result = [''.join(x) for x in product(*options)]
     return result
@@ -110,10 +110,10 @@ def select_low_degenerate_motifs(all_motifs, num_of_degenerate_nucls=0):
     return selected_motifs
 
 
-def create_list_of_sequences_from_selected_motifs(selected_motifs):
+def create_list_of_sequences_from_motifs(selected_motifs):
     sequences = []
     for i_r, rec in enumerate(selected_motifs):
-        for i_v, variant in enumerate(split_degenerate_to_variants(get_degenerate_consensus(rec.ncounts))):
+        for i_v, variant in enumerate(expand_degenerate_to_variants(get_degenerate_consensus(rec.ncounts))):
             sequences.append(
                 SeqRecord(Seq(variant), id=f'Bif_motif:{i_r}:{i_v}', description=f'{rec.start}:{rec.end}')
             )
@@ -121,43 +121,56 @@ def create_list_of_sequences_from_selected_motifs(selected_motifs):
     return sequences
 
 
-def choose_motifs_with_min_hits(motifs, blast_records, min_hits=10):
-    hits = [[] for i in range(len(motifs))]
+def choose_motifs_with_min_hits(selected_motifs, blast_records, min_hits=10):
+    hits = [[] for i in range(len(selected_motifs))]
     for rec in blast_records:
         seqrec_id, _ = rec.query.split(' ')
         _, i, _ = seqrec_id.split(':')
         hits[int(i)].extend(alignment.title.split()[0] for alignment in rec.alignments)
 
     motifs_with_min_hits = []
-    for rec, contaminants in zip(motifs, hits):
+    for rec, contaminants in zip(selected_motifs, hits):
         if len(contaminants) < min_hits:
             motifs_with_min_hits.append(rec)
 
     return motifs_with_min_hits
 
 
+def concatenate_overlapping_motifs(best_motifs):
+    sequences = []
+    for rec in best_motifs:
+        if len(sequences) == 0 or get_degenerate_consensus(rec.ncounts)[:-1] != \
+                sequences[-1][len(sequences[-1]) - (len(rec.motif) - 1):]:
+            sequences.append(get_degenerate_consensus(rec.ncounts))
+        elif get_degenerate_consensus(rec.ncounts)[:-1] == \
+                sequences[-1][len(sequences[-1]) - (len(rec.motif) - 1):]:
+            sequences[-1] = sequences[-1] + get_degenerate_consensus(rec.ncounts)[-1]
+
+    return sequences
+
+
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 
 @click.command(context_settings=CONTEXT_SETTINGS)
-@click.option('--taxon-alignment', '-ta', type=click.File('r'), help='Alignment of taxon species in FASTA format')
-@click.option('--length-of-motif', '-l', default=20)
-@click.option('--min-of-degenerate-nucls', '-d', default=0,
+@click.option('--alignment', '-a', type=click.File('r'), help='Alignment of taxon species in FASTA format')
+@click.option('--length-of-motif', '-l', default=20, show_default=True)
+@click.option('--max-degenerate', '-d', default=0, show_default=True,
               help='Maximum number of degenerate nucleotides allowed in a motif')
 @click.option('--database-name', '-db', type=str, help='BLAST database name')
-@click.option('--min-contaminants', '-c', default=10)
+@click.option('--max-contaminants', '-c', default=10, show_default=True)
 @click.option('--output', '-o', type=click.File('w'))
-def search_for_primer_candidates(taxon_alignment, length_of_motif, min_of_degenerate_nucls,
-                                 database_name, min_contaminants, output):
-    taxon_alignment = AlignIO.read(taxon_alignment, format='fasta')
-    taxon_alignment_modified = cleanup_alignment(taxon_alignment)
+def search_for_primer_candidates(alignment, length_of_motif, max_degenerate,
+                                 database_name, max_contaminants, output):
+    alignment = AlignIO.read(alignment, format='fasta')
+    taxon_alignment_modified = cleanup_alignment(alignment)
     taxon_alignment_wo_gaps = delete_gaps_from_consensus(taxon_alignment_modified)
 
     taxon_motifs = create_motifs_from_alignment(taxon_alignment_wo_gaps, length_of_motif)
     print(str(len(taxon_motifs)) + ' taxon motifs have been created')
-    selected_motifs = select_low_degenerate_motifs(taxon_motifs, min_of_degenerate_nucls)
+    selected_motifs = select_low_degenerate_motifs(taxon_motifs, max_degenerate)
     print(str(len(selected_motifs)) + ' motifs have been selected')
-    selected_sequences = create_list_of_sequences_from_selected_motifs(selected_motifs)
+    selected_sequences = create_list_of_sequences_from_motifs(selected_motifs)
     print(str(len(selected_sequences)) + ' sequences in all')
 
     with tempfile.NamedTemporaryFile() as seqs_for_blast, tempfile.NamedTemporaryFile() as blast_results:
@@ -172,20 +185,13 @@ def search_for_primer_candidates(taxon_alignment, length_of_motif, min_of_degene
         results = open(blast_results.name)
         blast_records = list(NCBIXML.parse(results))
 
-    best_motifs = choose_motifs_with_min_hits(selected_motifs, blast_records, min_contaminants)
+    best_motifs = choose_motifs_with_min_hits(selected_motifs, blast_records, max_contaminants)
 
-    # TODO
-    groups = [[]]
-    for motif in best_motifs:
-        if len(groups[-1]) == 0 or groups[-1][-1].start == motif.start - 1:
-            groups[-1].append(motif)
-        else:
-            groups.append([motif])
+    result = concatenate_overlapping_motifs(best_motifs)
+    print(str(len(result)) + ' continuous sequences have been written to the output file')
+    for seq in result:
+        output.write(seq + '\n')
 
-    for group in groups:
-        for motif in group:
-            output.write(str(get_degenerate_consensus(motif.ncounts)) + '\n')
-        output.write('\n')
 
 if __name__ == '__main__':
         search_for_primer_candidates()
