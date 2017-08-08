@@ -130,7 +130,7 @@ def choose_motifs_with_min_hits(selected_motifs, blast_records, min_hits=10):
 
     motifs_with_min_hits = []
     for rec, contaminants in zip(selected_motifs, hits):
-        if len(contaminants) < min_hits:
+        if len(contaminants) <= min_hits:
             motifs_with_min_hits.append(rec)
 
     return motifs_with_min_hits

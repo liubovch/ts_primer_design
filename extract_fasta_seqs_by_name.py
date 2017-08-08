@@ -9,7 +9,7 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.command(context_settings=CONTEXT_SETTINGS)
 @click.option('--species', '-sp', type=click.File('r'), help='File with taxon representatives each on its own line')
 @click.option('--sequences', '-sq', type=click.File('r'),
-              help='File in FASTA format from which you want to extract')
+              help='File in FASTA format from which you want to extract sequences')
 @click.option('--output', '-o', type=click.File('w'))
 def extract_fasta_seqs_by_name(species, sequences, output):
     species = [line.strip() for line in species]
