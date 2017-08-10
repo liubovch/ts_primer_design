@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import click
-from itertools import product
+from itertools import product, combinations
 from collections import namedtuple
 import tempfile
 from Bio import AlignIO
@@ -14,6 +14,7 @@ from Bio.Blast import NCBIXML
 from create_PWM_for_primers import get_normalized_counts
 from remove_gaps_from_alignment import cleanup_alignment
 from remove_gaps_from_alignment import ALPHABET
+from genera_extraction import get_genus
 
 
 DEGENERATE_NUCL_MAP = {
@@ -121,12 +122,17 @@ def create_list_of_sequences_from_motifs(selected_motifs):
     return sequences
 
 
-def choose_motifs_with_min_hits(selected_motifs, blast_records, min_hits=10):
-    hits = [[] for i in range(len(selected_motifs))]
+def collect_hits(selected_motifs, blast_records):
+    hits = [set() for i in range(len(selected_motifs))]
     for rec in blast_records:
         seqrec_id, _ = rec.query.split(' ')
         _, i, _ = seqrec_id.split(':')
-        hits[int(i)].extend(alignment.title.split()[0] for alignment in rec.alignments)
+        hits[int(i)].update(alignment.title.split()[0] for alignment in rec.alignments)
+    return hits
+
+
+def choose_motifs_with_min_hits(selected_motifs, blast_records, min_hits=10):
+    hits = collect_hits(selected_motifs, blast_records)
 
     motifs_with_min_hits = []
     for rec, contaminants in zip(selected_motifs, hits):
@@ -149,29 +155,66 @@ def concatenate_overlapping_motifs(best_motifs):
     return sequences
 
 
+def choose_motifs_with_no_cross_contaminants(selected_motifs, blast_records):
+    hits = collect_hits(selected_motifs, blast_records)
+
+    MotifRecWithHits = namedtuple('MotifRecWithHits', ['hits', 'rec'])
+    hits_motifs = [MotifRecWithHits(hits=h, rec=r) for h, r in zip(hits, selected_motifs) if len(h) < 500]
+    print(f"num motifs less 500: {len(hits_motifs)}")
+
+    results = []
+    min_cross_contaminants = None
+    contaminants = None
+    for m1, m2 in combinations(hits_motifs, 2):
+        if 100 <= abs(m1.rec.start - m2.rec.start) <= 300:
+            cross_contaminants = m1.hits.intersection(m2.hits)
+            if min_cross_contaminants is None or len(cross_contaminants) < min_cross_contaminants:
+                min_cross_contaminants = len(cross_contaminants)
+                contaminants = cross_contaminants
+
+            if len(cross_contaminants) < 30:
+                results.append((
+                    get_degenerate_consensus(m1.rec.ncounts),
+                    get_degenerate_consensus(m2.rec.ncounts),
+                    len(cross_contaminants)
+                ))
+    print(f'min cross contaminants: {min_cross_contaminants}')
+    if contaminants is not None:
+        for x in contaminants:
+            print(x, get_genus(x))
+
+    return results
+
+
+def concatenate_cross_contaminants(best_motifs):
+    second_column = []
+
+
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 
 @click.command(context_settings=CONTEXT_SETTINGS)
-@click.option('--alignment', '-a', type=click.File('r'), help='Alignment of taxon species in FASTA format')
+@click.option('--alignment', '-a', type=click.File('r'), required=True,
+              help='Alignment of taxon species in FASTA format')
+@click.option('--database-name', '-db', type=str, required=True, help='BLAST database name')
+@click.option('--output', '-o', type=click.File('w'), required=True)
 @click.option('--length-of-motif', '-l', default=20, show_default=True)
 @click.option('--max-degenerate', '-d', default=0, show_default=True,
               help='Maximum number of degenerate nucleotides allowed in a motif')
-@click.option('--database-name', '-db', type=str, help='BLAST database name')
+@click.option('--method', '-m', type=click.Choice(['hits', 'cross-hits']), required=True)
 @click.option('--max-contaminants', '-c', default=10, show_default=True)
-@click.option('--output', '-o', type=click.File('w'))
-def search_for_primer_candidates(alignment, length_of_motif, max_degenerate,
-                                 database_name, max_contaminants, output):
+def search_for_primer_candidates(alignment, database_name, output, length_of_motif,
+                                 max_degenerate, method, max_contaminants):
     alignment = AlignIO.read(alignment, format='fasta')
     taxon_alignment_modified = cleanup_alignment(alignment)
     taxon_alignment_wo_gaps = delete_gaps_from_consensus(taxon_alignment_modified)
 
     taxon_motifs = create_motifs_from_alignment(taxon_alignment_wo_gaps, length_of_motif)
-    print(str(len(taxon_motifs)) + ' taxon motifs have been created')
+    print(f'{str(len(taxon_motifs))} taxon motifs have been created')
     selected_motifs = select_low_degenerate_motifs(taxon_motifs, max_degenerate)
-    print(str(len(selected_motifs)) + ' motifs have been selected')
+    print(f'{str(len(selected_motifs))} motifs have been selected')
     selected_sequences = create_list_of_sequences_from_motifs(selected_motifs)
-    print(str(len(selected_sequences)) + ' sequences in all')
+    print(f'{str(len(selected_sequences))} sequences in all')
 
     with tempfile.NamedTemporaryFile() as seqs_for_blast, tempfile.NamedTemporaryFile() as blast_results:
         SeqIO.write(selected_sequences, seqs_for_blast.name, format='fasta')
@@ -185,12 +228,19 @@ def search_for_primer_candidates(alignment, length_of_motif, max_degenerate,
         results = open(blast_results.name)
         blast_records = list(NCBIXML.parse(results))
 
-    best_motifs = choose_motifs_with_min_hits(selected_motifs, blast_records, max_contaminants)
+    if method == 'hits':
+        best_motifs = choose_motifs_with_min_hits(selected_motifs, blast_records, max_contaminants)
+        result = concatenate_overlapping_motifs(best_motifs)
+        print(f'{str(len(result))} continuous sequences have been written to the output file')
+        for seq in result:
+            output.write(seq + '\n')
+    else:
+        best_motifs = choose_motifs_with_no_cross_contaminants(selected_motifs, blast_records)
+        for x in best_motifs:
+            print(*x)
+        # result = concatenate_cross_contaminants(best_motifs)
 
-    result = concatenate_overlapping_motifs(best_motifs)
-    print(str(len(result)) + ' continuous sequences have been written to the output file')
-    for seq in result:
-        output.write(seq + '\n')
+
 
 
 if __name__ == '__main__':
