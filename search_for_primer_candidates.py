@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import click
+import sys
 from itertools import product, combinations
 from collections import namedtuple
 import tempfile
@@ -131,12 +132,12 @@ def collect_hits(selected_motifs, blast_records):
     return hits
 
 
-def choose_motifs_with_min_hits(selected_motifs, blast_records, min_hits=10):
+def choose_motifs_with_min_hits(selected_motifs, blast_records, max_hits=10):
     hits = collect_hits(selected_motifs, blast_records)
 
     motifs_with_min_hits = []
     for rec, contaminants in zip(selected_motifs, hits):
-        if len(contaminants) <= min_hits:
+        if len(contaminants) <= max_hits:
             motifs_with_min_hits.append(rec)
 
     return motifs_with_min_hits
@@ -155,39 +156,31 @@ def concatenate_overlapping_motifs(best_motifs):
     return sequences
 
 
-def choose_motifs_with_no_cross_contaminants(selected_motifs, blast_records):
+def choose_motifs_with_min_cross_hits(selected_motifs, blast_records, max_cross_hits=30):
     hits = collect_hits(selected_motifs, blast_records)
 
     MotifRecWithHits = namedtuple('MotifRecWithHits', ['hits', 'rec'])
     hits_motifs = [MotifRecWithHits(hits=h, rec=r) for h, r in zip(hits, selected_motifs) if len(h) < 500]
-    print(f"num motifs less 500: {len(hits_motifs)}")
+    print(f'Number motifs with less than 500 hits: {len(hits_motifs)}\n')
 
-    results = []
-    min_cross_contaminants = None
-    contaminants = None
+    motif_pairs = []
+    num_cross_hits = []
     for m1, m2 in combinations(hits_motifs, 2):
         if 100 <= abs(m1.rec.start - m2.rec.start) <= 300:
-            cross_contaminants = m1.hits.intersection(m2.hits)
-            if min_cross_contaminants is None or len(cross_contaminants) < min_cross_contaminants:
-                min_cross_contaminants = len(cross_contaminants)
-                contaminants = cross_contaminants
+            cross_hits = m1.hits.intersection(m2.hits)
+            num_cross_hits.append(len(cross_hits))
 
-            if len(cross_contaminants) < 30:
-                results.append((
+            if len(cross_hits) <= max_cross_hits:
+                motif_pairs.append((
                     get_degenerate_consensus(m1.rec.ncounts),
                     get_degenerate_consensus(m2.rec.ncounts),
-                    len(cross_contaminants)
+                    len(cross_hits),
+                    list(cross_hits),
+                    [get_genus(hit) for hit in cross_hits]
                 ))
-    print(f'min cross contaminants: {min_cross_contaminants}')
-    if contaminants is not None:
-        for x in contaminants:
-            print(x, get_genus(x))
 
-    return results
-
-
-def concatenate_cross_contaminants(best_motifs):
-    second_column = []
+    print(f'30 minimal numbers of cross-hits: {sorted(num_cross_hits)[:30]}\n')
+    return motif_pairs
 
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
@@ -202,19 +195,23 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.option('--max-degenerate', '-d', default=0, show_default=True,
               help='Maximum number of degenerate nucleotides allowed in a motif')
 @click.option('--method', '-m', type=click.Choice(['hits', 'cross-hits']), required=True)
-@click.option('--max-contaminants', '-c', default=10, show_default=True)
+@click.option('--max-hits', '-mh', default=10, show_default=True)
+@click.option('--max-cross-hits', '-mc', default=30, show_default=True)
 def search_for_primer_candidates(alignment, database_name, output, length_of_motif,
-                                 max_degenerate, method, max_contaminants):
+                                 max_degenerate, method, max_hits, max_cross_hits):
+    print('Job command: ', end='')
+    print(*sys.argv)
+
     alignment = AlignIO.read(alignment, format='fasta')
     taxon_alignment_modified = cleanup_alignment(alignment)
     taxon_alignment_wo_gaps = delete_gaps_from_consensus(taxon_alignment_modified)
 
     taxon_motifs = create_motifs_from_alignment(taxon_alignment_wo_gaps, length_of_motif)
-    print(f'{str(len(taxon_motifs))} taxon motifs have been created')
+    print(f'{len(taxon_motifs)} taxon motifs have been created')
     selected_motifs = select_low_degenerate_motifs(taxon_motifs, max_degenerate)
-    print(f'{str(len(selected_motifs))} motifs have been selected')
+    print(f'{len(selected_motifs)} motifs have been selected')
     selected_sequences = create_list_of_sequences_from_motifs(selected_motifs)
-    print(f'{str(len(selected_sequences))} sequences in all')
+    print(f'{len(selected_sequences)} sequences in all')
 
     with tempfile.NamedTemporaryFile() as seqs_for_blast, tempfile.NamedTemporaryFile() as blast_results:
         SeqIO.write(selected_sequences, seqs_for_blast.name, format='fasta')
@@ -229,18 +226,21 @@ def search_for_primer_candidates(alignment, database_name, output, length_of_mot
         blast_records = list(NCBIXML.parse(results))
 
     if method == 'hits':
-        best_motifs = choose_motifs_with_min_hits(selected_motifs, blast_records, max_contaminants)
+        best_motifs = choose_motifs_with_min_hits(selected_motifs, blast_records, max_hits)
         result = concatenate_overlapping_motifs(best_motifs)
-        print(f'{str(len(result))} continuous sequences have been written to the output file')
+        print(f'{len(result)} continuous sequences have been written to the output file')
         for seq in result:
             output.write(seq + '\n')
     else:
-        best_motifs = choose_motifs_with_no_cross_contaminants(selected_motifs, blast_records)
-        for x in best_motifs:
-            print(*x)
-        # result = concatenate_cross_contaminants(best_motifs)
-
-
+        motif_pairs = choose_motifs_with_min_cross_hits(selected_motifs, blast_records, max_cross_hits)
+        print(f'{len(motif_pairs)} pairs of motifs have been selected\n')
+        for rec in motif_pairs:
+            print(rec[:3])
+            for hit, gen in zip(rec[3], rec[4]):
+                print(hit, gen, sep='\t')
+            print()
+        for rec in motif_pairs:
+            output.write(rec[0] + '\t' + rec[1] + '\t' + str(rec[2]) + '\n')
 
 
 if __name__ == '__main__':
