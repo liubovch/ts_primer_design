@@ -61,12 +61,13 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 
 @click.command(context_settings=CONTEXT_SETTINGS)
-@click.option('--rdb-alignment', '-a', type=click.File('r'), help='Alignment in FASTA format')
+@click.option('--alignment', '-a', type=click.File('r'),
+              help='Alignment of all sequences from HITdb in FASTA format', required=True)
 @click.option('--species', '-sp', type=click.File('r'),
-              help='File with taxon representatives each on its own line')
-@click.option('--output', '-o', type=click.File('w'))
-def foo(rdb_alignment, species, output):
-    alignment = AlignIO.read(rdb_alignment, format='fasta')
+              help='File with taxon representatives each on its own line', required=True)
+@click.option('--output', '-o', type=click.File('w'), required=True)
+def foo(alignment, species, output):
+    alignment = AlignIO.read(alignment, format='fasta')
     alignment_wo_extra_characters = cleanup_alignment(alignment)
     species = [line.strip() for line in species]
     alignment_wo_gaps = remove_gaps_from_alignment(alignment_wo_extra_characters, species)
