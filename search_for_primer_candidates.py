@@ -15,7 +15,7 @@ from Bio.Blast import NCBIXML
 from create_PWM_for_primers import get_normalized_counts
 from remove_gaps_from_alignment import cleanup_alignment
 from remove_gaps_from_alignment import ALPHABET
-from genera_extraction import get_genus
+from taxonomy_extraction import get_taxonomy
 
 
 DEGENERATE_NUCL_MAP = {
@@ -192,7 +192,7 @@ def choose_motifs_with_min_cross_hits(selected_motifs, blast_records, max_cross_
                     get_degenerate_consensus(m2.rec.ncounts),
                     len(cross_hits),
                     list(cross_hits),
-                    [get_genus(hit) for hit in cross_hits]
+                    [get_taxonomy(hit) for hit in cross_hits]
                 ))
 
     print(f'30 minimal numbers of cross-hits: {sorted(num_cross_hits)[:30]}\n')
