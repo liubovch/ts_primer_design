@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 
 import click
-from Bio import SeqIO
+import os.path as path
 import tempfile
 import subprocess
+from Bio import SeqIO
 
+
+__SEQUENCES_PATH = path.join(path.dirname(__file__), 'HITdb_v1.00', 'HITdb_sequences.fasta')
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 
 @click.command(context_settings=CONTEXT_SETTINGS)
-@click.option('--species', '-sp', type=click.File('r'), help='File with taxon representatives each on its own line')
-@click.option('--sequences', '-sq', type=click.File('r'), help='Sequences in FASTA format')
-@click.option('--database-name', '-db', help='Name of BLAST database to be created')
-def create_blastdb(species, sequences, database_name):
+@click.option('--species', '-sp', type=click.File('r'),
+              help='File with taxon representatives each on its own line', required=True)
+@click.option('--database-name', '-db', help='Name of BLAST database to be created', required=True)
+def create_blastdb(species, database_name):
     species = [line.strip() for line in species]
 
     db_wo_taxon_seqs = []
-    for rec in SeqIO.parse(sequences, format='fasta'):
+    for rec in SeqIO.parse(__SEQUENCES_PATH, format='fasta'):
         if rec.id not in species:
             db_wo_taxon_seqs.append(rec)
     with tempfile.NamedTemporaryFile() as tmp:
