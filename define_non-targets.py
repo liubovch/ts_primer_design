@@ -8,6 +8,7 @@ from Bio.Seq import Seq
 from search_for_primer_candidates import expand_degenerate_to_variants, run_blast, collect_hits
 from taxonomy_extraction import get_taxonomy
 
+
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 
