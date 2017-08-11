@@ -117,10 +117,26 @@ def create_list_of_sequences_from_motifs(selected_motifs):
     for i_r, rec in enumerate(selected_motifs):
         for i_v, variant in enumerate(expand_degenerate_to_variants(get_degenerate_consensus(rec.ncounts))):
             sequences.append(
-                SeqRecord(Seq(variant), id=f'Bif_motif:{i_r}:{i_v}', description=f'{rec.start}:{rec.end}')
+                SeqRecord(Seq(variant), id=f'Motif:{i_r}:{i_v}', description=f'{rec.start}:{rec.end}')
             )
 
     return sequences
+
+
+def run_blast(selected_sequences, database_name):
+    with tempfile.NamedTemporaryFile() as seqs_for_blast, tempfile.NamedTemporaryFile() as blast_results:
+        SeqIO.write(selected_sequences, seqs_for_blast.name, format='fasta')
+        # run BLAST
+        blastn_cline = NcbiblastnCommandline(query=seqs_for_blast.name, db=database_name,
+                                             task='blastn-short', perc_identity=100, qcov_hsp_perc=100,
+                                             outfmt=5, out=blast_results.name)
+        print('Running BLAST!')
+        stdout, stderr = blastn_cline()
+        print('Extracting BLAST records!')
+        results = open(blast_results.name)
+        blast_records = list(NCBIXML.parse(results))
+
+    return blast_records
 
 
 def collect_hits(selected_motifs, blast_records):
@@ -213,17 +229,7 @@ def search_for_primer_candidates(alignment, database_name, output, length_of_mot
     selected_sequences = create_list_of_sequences_from_motifs(selected_motifs)
     print(f'{len(selected_sequences)} sequences in all')
 
-    with tempfile.NamedTemporaryFile() as seqs_for_blast, tempfile.NamedTemporaryFile() as blast_results:
-        SeqIO.write(selected_sequences, seqs_for_blast.name, format='fasta')
-        # run BLAST
-        blastn_cline = NcbiblastnCommandline(query=seqs_for_blast.name, db=database_name,
-                                             task='blastn-short', perc_identity=100, qcov_hsp_perc=100,
-                                             outfmt=5, out=blast_results.name)
-        print('Running BLAST!')
-        stdout, stderr = blastn_cline()
-        print('Extracting BLAST records!')
-        results = open(blast_results.name)
-        blast_records = list(NCBIXML.parse(results))
+    blast_records = run_blast(selected_sequences, database_name)
 
     if method == 'hits':
         best_motifs = choose_motifs_with_min_hits(selected_motifs, blast_records, max_hits)
