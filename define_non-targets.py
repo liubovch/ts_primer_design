@@ -3,9 +3,8 @@
 import click
 from Bio import SeqIO
 from Bio.Alphabet import IUPAC
-from Bio.SeqRecord import SeqRecord
-from Bio.Seq import Seq
-from search_for_primer_candidates import expand_degenerate_to_variants, run_blast, collect_hits
+from alphabet_manipulations import expand_degenerate_primers
+from search_for_primer_candidates import run_blast, collect_hits
 from taxonomy_extraction import get_taxonomy
 
 
@@ -20,10 +19,7 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.option('--output', '-o', type=click.File('w'), required=True)
 def define_non_targets(primers, database_name, output):
     sequences = list(SeqIO.parse(primers, format='fasta', alphabet=IUPAC.ambiguous_dna))
-    variants = []
-    for i_r, rec in enumerate(sequences):
-        for i_v, variant in enumerate(expand_degenerate_to_variants(rec.seq)):
-            variants.append(SeqRecord(Seq(variant), id=f'{rec.id}:{i_r}:{i_v}', description='Primer_to_16S_rRNA'))
+    variants = expand_degenerate_primers(sequences)
 
     blast_results = run_blast(variants, database_name)
     hits = collect_hits(sequences, blast_results)

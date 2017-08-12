@@ -2,100 +2,18 @@
 
 import click
 import sys
-from itertools import product, combinations
+from itertools import combinations
 from collections import namedtuple
 import tempfile
 from Bio import AlignIO
 from Bio.Seq import Seq
-from Bio import motifs
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 from Bio.Blast.Applications import NcbiblastnCommandline
 from Bio.Blast import NCBIXML
-from create_PWM_for_primers import get_normalized_counts
-from remove_gaps_from_alignment import cleanup_alignment
-from remove_gaps_from_alignment import ALPHABET
+from alignment_manipulations import cleanup_alignment
+from alphabet_manipulations import get_degenerate_consensus, expand_degenerate_sequence
 from taxonomy_extraction import get_taxonomy
-
-
-DEGENERATE_NUCL_MAP = {
-    'A': 'A',
-    'C': 'C',
-    'G': 'G',
-    'T': 'T',
-    'AC': 'M',
-    'AG': 'R',
-    'AT': 'W',
-    'CG': 'S',
-    'CT': 'Y',
-    'GT': 'K',
-    'ACG': 'V',
-    'ACT': 'H',
-    'AGT': 'D',
-    'CGT': 'B',
-    'ACGT': 'N',
-}
-
-DEGENERATE_NUCL_MAP_INV = {v: k for k, v in DEGENERATE_NUCL_MAP.items()}
-
-
-# MY OWN FUNCTION for calculating degenerate consensus of motif
-def get_degenerate_consensus(counts):
-    sequence = ''
-    counts = counts
-    if '-' in counts:
-        del counts['-']
-    for i in range(counts.length):
-        def get(nucleotide):
-            return counts[nucleotide][i]
-
-        nucleotides = sorted(counts, key=get, reverse=True)
-        nucl_counts = [counts[c][i] for c in nucleotides]
-        if nucl_counts[0] > 0.9:
-            key = nucleotides[0]
-        elif nucl_counts[1] < 0.1 and sum(nucl_counts[1:]) < 0.25:
-            key = nucleotides[0]
-        elif nucl_counts[2] < 0.1 and nucl_counts[1] >= 0.1:
-            key = ''.join(sorted(nucleotides[:2]))
-        elif nucl_counts[3] < 0.1 and nucl_counts[2] >= 0.1:
-            key = ''.join(sorted(nucleotides[:3]))
-        else:
-            key = "ACGT"
-        nucleotide = DEGENERATE_NUCL_MAP.get(key, key)
-        sequence += nucleotide
-    return sequence
-
-
-def expand_degenerate_to_variants(consensus):
-    options = [DEGENERATE_NUCL_MAP_INV[x] for x in consensus]
-    result = [''.join(x) for x in product(*options)]
-    return result
-
-
-def delete_gaps_from_consensus(alignment):
-    alignment_motif = motifs.create([rec.seq for rec in alignment], ALPHABET)
-    gap_positions = []
-    for i, letter in enumerate(str(alignment_motif.consensus)):
-        if letter == '-':
-            gap_positions.append(i)
-
-    for rec in alignment:
-        seq_string_wo_gaps = ''.join([rec.seq[i] for i in range(len(rec.seq)) if i not in gap_positions])
-        rec.seq = Seq(seq_string_wo_gaps, ALPHABET)
-
-    return alignment
-
-
-def create_motifs_from_alignment(alignment, k=20):
-    MotifWithInfo = namedtuple('MotifWithPos', ['motif', 'start', 'end', 'ncounts'])
-    all_motifs = []
-    s = 0
-    while s <= (len(alignment[0]) - k):
-        motif = motifs.create([rec.seq for rec in alignment[:, s:s + k]], ALPHABET)
-        all_motifs.append(MotifWithInfo(motif=motif, start=s, end=s + k, ncounts=get_normalized_counts(motif)))
-        s += 1
-
-    return all_motifs
 
 
 def select_low_degenerate_motifs(all_motifs, num_of_degenerate_nucls=0):
@@ -115,7 +33,7 @@ def select_low_degenerate_motifs(all_motifs, num_of_degenerate_nucls=0):
 def create_list_of_sequences_from_motifs(selected_motifs):
     sequences = []
     for i_r, rec in enumerate(selected_motifs):
-        for i_v, variant in enumerate(expand_degenerate_to_variants(get_degenerate_consensus(rec.ncounts))):
+        for i_v, variant in enumerate(expand_degenerate_sequence(get_degenerate_consensus(rec.ncounts))):
             sequences.append(
                 SeqRecord(Seq(variant), id=f'Motif:{i_r}:{i_v}', description=f'{rec.start}:{rec.end}')
             )
