@@ -15,9 +15,9 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 @click.command(context_settings=CONTEXT_SETTINGS)
 @click.option('--primers', '-p', type=click.File('r'),
               help='List of primers (F — forward, R — reverse, Z_F — forward probe, Z_R — reverse probe)'
-                   ' in FASTA format presented by ambiguous alphabet')
-@click.option('--database-name', '-db', type=str, required=True, help='BLAST database name')
-@click.option('--output', '-o', type=click.File('w'))
+                   ' in FASTA format presented by ambiguous alphabet', required=True)
+@click.option('--database-name', '-db', type=str, help='BLAST database name', required=True)
+@click.option('--output', '-o', type=click.File('w'), required=True)
 def define_non_targets(primers, database_name, output):
     sequences = list(SeqIO.parse(primers, format='fasta', alphabet=IUPAC.ambiguous_dna))
     variants = []
