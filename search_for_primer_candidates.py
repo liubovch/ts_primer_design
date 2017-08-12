@@ -177,7 +177,7 @@ def choose_motifs_with_min_cross_hits(selected_motifs, blast_records, max_cross_
 
     MotifRecWithHits = namedtuple('MotifRecWithHits', ['hits', 'rec'])
     hits_motifs = [MotifRecWithHits(hits=h, rec=r) for h, r in zip(hits, selected_motifs) if len(h) < 500]
-    print(f'Number motifs with less than 500 hits: {len(hits_motifs)}\n')
+    print(f'Number of motifs with less than 500 hits: {len(hits_motifs)}\n')
 
     motif_pairs = []
     num_cross_hits = []
@@ -239,12 +239,12 @@ def search_for_primer_candidates(alignment, database_name, output, length_of_mot
             output.write(seq + '\n')
     else:
         motif_pairs = choose_motifs_with_min_cross_hits(selected_motifs, blast_records, max_cross_hits)
-        print(f'{len(motif_pairs)} pairs of motifs have been selected\n')
         for rec in motif_pairs:
             print(rec[:3])
-            for hit, gen in zip(rec[3], rec[4]):
-                print(hit, gen, sep='\t')
+            for hit, tax in zip(rec[3], rec[4]):
+                print(hit, tax, sep='\t')
             print()
+        print(f'{len(motif_pairs)} pairs of motifs have been selected\n')
         for rec in motif_pairs:
             output.write(rec[0] + '\t' + rec[1] + '\t' + str(rec[2]) + '\n')
 
