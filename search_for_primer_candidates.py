@@ -51,13 +51,13 @@ def get_degenerate_consensus(counts):
 
         nucleotides = sorted(counts, key=get, reverse=True)
         nucl_counts = [counts[c][i] for c in nucleotides]
-        if nucl_counts[0] > 0.95:
+        if nucl_counts[0] > 0.9:
             key = nucleotides[0]
-        elif nucl_counts[1] < 0.05 and sum(nucl_counts[1:]) < 0.08:
+        elif nucl_counts[1] < 0.1 and sum(nucl_counts[1:]) < 0.25:
             key = nucleotides[0]
-        elif nucl_counts[2] < 0.03:
+        elif nucl_counts[2] < 0.1 and nucl_counts[1] >= 0.1:
             key = ''.join(sorted(nucleotides[:2]))
-        elif nucl_counts[3] < 0.03:
+        elif nucl_counts[3] < 0.1 and nucl_counts[2] >= 0.1:
             key = ''.join(sorted(nucleotides[:3]))
         else:
             key = "ACGT"
