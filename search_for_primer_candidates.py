@@ -22,7 +22,7 @@ def select_low_degenerate_motifs(all_motifs, num_of_degenerate_nucls=0):
         conf = 0
         for position in range(len(rec.motif)):
             position_counts = rec.ncounts[:, position]
-            if any(v > 0.95 for v in position_counts.values()):
+            if any(v > 0.9 for v in position_counts.values()):
                 conf += 1
         if conf >= len(rec.motif) - num_of_degenerate_nucls:
             selected_motifs.append(rec)
