@@ -11,7 +11,7 @@ from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 from Bio.Blast.Applications import NcbiblastnCommandline
 from Bio.Blast import NCBIXML
-from alignment_manipulations import cleanup_alignment
+from alignment_manipulations import cleanup_alignment, delete_gaps_from_consensus, create_motifs_from_alignment
 from alphabet_manipulations import get_degenerate_consensus, expand_degenerate_sequence
 from taxonomy_extraction import get_taxonomy
 
