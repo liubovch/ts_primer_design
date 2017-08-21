@@ -2,7 +2,7 @@
 
 import click
 import sys
-from itertools import combinations
+from itertools import combinations, groupby
 from collections import namedtuple
 import tempfile
 from Bio import AlignIO
@@ -90,6 +90,9 @@ def concatenate_overlapping_motifs(best_motifs):
     return sequences
 
 
+MotifPair = namedtuple('MotifPair', ['fst', 'snd', 'cross_hits'])
+
+
 def choose_motifs_with_min_cross_hits(selected_motifs, blast_records, max_cross_hits=30):
     hits = collect_hits(selected_motifs, blast_records)
 
@@ -100,20 +103,45 @@ def choose_motifs_with_min_cross_hits(selected_motifs, blast_records, max_cross_
     motif_pairs = []
     num_cross_hits = []
     for m1, m2 in combinations(hits_motifs, 2):
-        if 100 <= abs(m1.rec.start - m2.rec.start) <= 300:
+        if 50 <= abs(m1.rec.start - m2.rec.start) <= 300:
             cross_hits = m1.hits.intersection(m2.hits)
             num_cross_hits.append(len(cross_hits))
 
             if len(cross_hits) <= max_cross_hits:
-                motif_pairs.append((
-                    get_degenerate_consensus(m1.rec.ncounts),
-                    get_degenerate_consensus(m2.rec.ncounts),
-                    len(cross_hits),
-                    list(cross_hits),
-                    [get_taxonomy(hit) for hit in cross_hits]
-                ))
+                motif_pairs.append(MotifPair(m1.rec, m2.rec, cross_hits))
 
-    print(f'30 minimal numbers of cross-hits: {sorted(num_cross_hits)[:30]}\n')
+    print(f'100 minimal numbers of cross-hits: {sorted(num_cross_hits)[:100]}\n')
+    return motif_pairs
+
+
+def simplify_by_first(motif_pairs):
+    motif_pairs.sort(key=lambda x: x[0])
+    for fst, fst_pairs in groupby(motif_pairs, lambda x: x[0]):
+        snds = list(snd for _, snd in fst_pairs)
+        edges = {x[:-1]: x[1:] for x in snds}
+        incoming = set(edges.values())
+
+        def get_joined(x):
+            return x if x not in edges else x[0] + get_joined(edges[x])
+        for snd in snds:
+            if snd[:-1] not in incoming:
+                yield (fst, get_joined(snd[:-1]))
+
+
+def leave_superstring_first(motif_pairs):
+    motif_pairs.sort(key=lambda x: x[0])
+    for i in range(len(motif_pairs) - 1, 0, -1):
+        if motif_pairs[i][0].startswith(motif_pairs[i - 1][0]):
+            motif_pairs[i - 1] = (motif_pairs[i][0], motif_pairs[i - 1][1])
+
+
+def simplify_pairs(motif_pairs):
+    motif_pairs = list(simplify_by_first(motif_pairs))
+    motif_pairs = [(y, x) for x, y in motif_pairs]
+    leave_superstring_first(motif_pairs)
+    motif_pairs = list(simplify_by_first(motif_pairs))
+    motif_pairs = [(y, x) for x, y in motif_pairs]
+    leave_superstring_first(motif_pairs)
     return motif_pairs
 
 
@@ -157,14 +185,21 @@ def search_for_primer_candidates(alignment, database_name, output, length_of_mot
             output.write(seq + '\n')
     else:
         motif_pairs = choose_motifs_with_min_cross_hits(selected_motifs, blast_records, max_cross_hits)
-        for rec in motif_pairs:
-            print(rec[:3])
-            for hit, tax in zip(rec[3], rec[4]):
-                print(hit, tax, sep='\t')
+        for motif_pair in motif_pairs:
+            print(
+                get_degenerate_consensus(motif_pair.fst.ncounts),
+                get_degenerate_consensus(motif_pair.snd.ncounts),
+                len(motif_pair.cross_hits)
+            )
+
+            for hit in motif_pair.cross_hits:
+                print(hit, get_taxonomy(hit), sep='\t')
             print()
         print(f'{len(motif_pairs)} pairs of motifs have been selected\n')
-        for rec in motif_pairs:
-            output.write(rec[0] + '\t' + rec[1] + '\t' + str(rec[2]) + '\n')
+        motif_seq_pairs = [(get_degenerate_consensus(x.fst.ncounts), get_degenerate_consensus(x.snd.ncounts)) for x in motif_pairs]
+        motif_seq_pairs = simplify_pairs(motif_seq_pairs)
+        for fst, snd in motif_seq_pairs:
+            output.write(f'{fst}\t{snd}\n')
 
 
 if __name__ == '__main__':
