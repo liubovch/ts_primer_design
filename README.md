@@ -1,1 +1,1 @@
-# Design of primer for Knomics
+# Design of species-specific primers
