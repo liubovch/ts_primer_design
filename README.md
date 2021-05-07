@@ -1,1 +1,1 @@
-# Design of species-specific primers
+# Design of taxon-specific primers
